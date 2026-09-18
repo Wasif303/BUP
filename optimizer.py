@@ -185,16 +185,3 @@ def solve_energy_dispatch(
     recalc_peak = round(max(p["grid_kwh"] for p in hourly_plan), 2)
 
     return hourly_plan, recalc_grid, recalc_cost, recalc_peak
-
-def run_optimization(scenario_id: str, hours: List[Dict[str, Any]], battery: Dict[str, Any], directives: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Compatibility wrapper returning full dictionary payload."""
-    hourly_plan, total_grid, total_cost, peak_grid = solve_energy_dispatch(hours, battery, directives)
-    return {
-        "scenario_id": scenario_id,
-        "directive_interpretation": directives,
-        "hourly_plan": hourly_plan,
-        "total_grid_kwh": total_grid,
-        "total_cost_bdt": total_cost,
-        "peak_grid_kwh": peak_grid,
-        "plan_summary": f"Optimized schedule minimizes total cost to {total_cost:.2f} BDT while strictly maintaining all battery bounds and end-of-day neutrality."
-    }
