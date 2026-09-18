@@ -34,9 +34,11 @@ def health_check():
 import google.generativeai as genai
 from optimizer import run_optimization
 import json
+import os
 
-# Initialize Gemini API (User's Key)
-genai.configure(api_key="AQ.Ab8RN6KnAM3JdyT4nvKcAYPUjHJOvBNGzvdikXSgL_cpLaiF6w")
+# Initialize Gemini API securely from Environment Variables
+api_key = os.environ.get("GEMINI_API_KEY", "")
+genai.configure(api_key=api_key)
 model = genai.GenerativeModel('gemini-1.5-flash')
 
 @app.post("/optimize-energy")
