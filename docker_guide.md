@@ -1,4 +1,4 @@
-﻿# 🐳 Docker Fallback Image — Build & Push Guide
+# 🐳 Docker Fallback Image — Build & Push Guide
 
 According to Section 03 & Section 07 of the Hackathon Evaluation Rubric:
 > *"The judges require a working pullable Docker fallback image that reaches /health using the documented command (4 points)."*
@@ -8,7 +8,7 @@ According to Section 03 & Section 07 of the Hackathon Evaluation Rubric:
 ## 📋 Quick Steps for Your Team
 
 ### Step 1: Log in to Docker Hub
-In your terminal (on any computer with Docker installed, such as Member 1 or Member 2):
+In your terminal (on any machine with Docker installed):
 ```bash
 docker login
 ```
@@ -27,8 +27,8 @@ docker build -t wasif303/gridwise:latest .
 
 ### Step 3: Test the Image Locally Before Pushing
 ```bash
-# Run container with a dummy or real API_KEY
-docker run -d -p 8000:8000 -e API_KEY="your-gemini-api-key" --name gridwise-test wasif303/gridwise:latest
+# Run container with API key
+docker run -d -p 8000:8000 -e GEMINI_API_KEY="your-gemini-api-key" --name gridwise-test wasif303/gridwise:latest
 
 # Check health endpoint
 curl http://localhost:8000/health
@@ -53,7 +53,7 @@ Once pushed, verify on [hub.docker.com](https://hub.docker.com) that the reposit
 Make sure this exact command is in the README and submission form:
 ```bash
 docker pull wasif303/gridwise:latest
-docker run -d -p 8000:8000 -e API_KEY="your-gemini-api-key" wasif303/gridwise:latest
+docker run -d -p 8000:8000 -e GEMINI_API_KEY="your-gemini-api-key" wasif303/gridwise:latest
 ```
 And verify health:
 ```bash

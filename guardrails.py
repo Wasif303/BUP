@@ -1,6 +1,6 @@
 """
 guardrails.py - Deterministic Validation and Interpretation Guardrails
-Strictly adheres to Section 08 and Section 04 of the BUP CSE Fest 2026 Problem Statement.
+Strictly adheres to Section 04 and Section 08 of the BUP CSE Fest 2026 Problem Statement.
 """
 
 import re
@@ -31,7 +31,7 @@ def parse_time_window_heuristics(text: str) -> List[int]:
     clean_text = clean_text.replace("seven", "7").replace("eight", "8").replace("nine", "9")
     clean_text = clean_text.replace("ten", "10").replace("eleven", "11").replace("twelve", "12")
     
-    # 24-hour formats: 13:00 to 15:00 or 13:00 - 15:00
+    # 24-hour formats: 13:00 to 15:00 or 13:00 - 15:00 or between 13:00 and 15:00
     m24 = re.search(r'(\d{1,2}):00\s*(?:to|until|and|-)\s*(\d{1,2}):00', clean_text)
     if m24:
         start, end = int(m24.group(1)), int(m24.group(2))
@@ -61,10 +61,14 @@ def parse_time_window_heuristics(text: str) -> List[int]:
 
 def fallback_interpret_note(note: str, note_index: int, battery_capacity: float) -> Dict[str, Any]:
     """
-    Robust heuristic interpreter used as backup if the external LLM is offline or rate-limited.
+    Bulletproof heuristic interpreter used as backup if the external LLM is offline or rate-limited.
     """
     lower = note.lower()
-    energy_keywords = ["solar", "pv", "panel", "battery", "charge", "discharge", "grid", "feeder", "transformer", "substation", "kwh", "reserve"]
+    energy_keywords = [
+        "solar", "pv", "panel", "battery", "charge", "charger", "charging",
+        "discharge", "discharging", "grid", "feeder", "transformer", "substation",
+        "kwh", "reserve", "intake"
+    ]
     
     if not any(k in lower for k in energy_keywords):
         return {
@@ -86,7 +90,7 @@ def fallback_interpret_note(note: str, note_index: int, battery_capacity: float)
         }
 
     # 1. Solar reduction
-    if any(w in lower for w in ["solar", "pv", "panel"]) and any(w in lower for w in ["reduc", "drop", "wash", "cloud", "roughly", "usable", "leave"]):
+    if any(w in lower for w in ["solar", "pv", "panel"]) and any(w in lower for w in ["reduc", "drop", "wash", "cloud", "roughly", "usable", "leave", "maintenance", "cleaning"]):
         factor = 0.5
         m_pct_drop = re.search(r'(\d{1,2})%\s*(?:reduction|drop)', lower)
         m_pct_to = re.search(r'(?:drop to|treated as|leaves?|to about|to roughly|roughly)\s*(\d{1,2})%', lower)
@@ -108,11 +112,11 @@ def fallback_interpret_note(note: str, note_index: int, battery_capacity: float)
             "applies": True,
             "directive_type": "solar_reduction",
             "structured_adjustment": {"hours": hours, "factor": factor},
-            "explanation": f"Solar output adjusted to {factor*100:.0f}% of forecast during maintenance."
+            "explanation": f"Solar output adjusted to {factor*100:.0f}% of forecast during maintenance window."
         }
 
     # 2. No charge window
-    if any(w in lower for w in ["charge", "charger", "charging"]) and any(w in lower for w in ["not charge", "do not charge", "isolated", "unavailable", "disabled", "prevent", "outage"]):
+    if any(w in lower for w in ["charge", "charger", "charging"]) and any(w in lower for w in ["not charge", "do not charge", "isolated", "unavailable", "disabled", "prevent", "outage", "maintenance", "offline"]):
         return {
             "note_index": note_index,
             "applies": True,
@@ -122,7 +126,7 @@ def fallback_interpret_note(note: str, note_index: int, battery_capacity: float)
         }
 
     # 3. No discharge window
-    if any(w in lower for w in ["discharge", "discharging"]) and any(w in lower for w in ["not discharge", "do not discharge", "disabled", "unavailable", "prevent", "testing"]):
+    if any(w in lower for w in ["discharge", "discharging"]) and any(w in lower for w in ["not discharge", "do not discharge", "disabled", "unavailable", "prevent", "testing", "isolated"]):
         return {
             "note_index": note_index,
             "applies": True,
@@ -132,7 +136,7 @@ def fallback_interpret_note(note: str, note_index: int, battery_capacity: float)
         }
 
     # 4. Minimum battery reserve
-    if "reserve" in lower or "remain in the battery" in lower or "stored in the battery" in lower:
+    if any(w in lower for w in ["reserve", "remain in the battery", "stored in the battery", "in the battery", "in reserve", "require"]):
         m_pct = re.search(r'(\d{1,2})%\s*(?:of (?:the )?battery capacity)?', lower)
         m_kwh = re.search(r'(\d+(?:\.\d+)?)\s*kwh', lower)
         reserve_kwh = 0.0
@@ -147,7 +151,7 @@ def fallback_interpret_note(note: str, note_index: int, battery_capacity: float)
             "applies": True,
             "directive_type": "minimum_battery_reserve",
             "structured_adjustment": {"hours": hours, "minimum_energy_kwh": reserve_kwh},
-            "explanation": f"Emergency reserve of {reserve_kwh} kWh maintained."
+            "explanation": f"Emergency reserve of {reserve_kwh} kWh maintained in battery."
         }
 
     # 5. Max grid window

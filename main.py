@@ -1,6 +1,6 @@
 """
 main.py - GridWise Smart Campus Energy Optimization Service
-Fully compliant with BUP CSE FEST 2026 Problem Statement and Evaluation Rubric.
+Fully compliant with BUP CSE FEST 2026 Problem Statement & Evaluation Rubric.
 """
 
 import os
@@ -12,7 +12,8 @@ from typing import List, Dict, Any, Optional
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
-from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 import google.generativeai as genai
 
 from guardrails import sanitize_and_validate_directives
@@ -27,28 +28,37 @@ app = FastAPI(
     version="2.0"
 )
 
+# Enable CORS for cross-origin judging harnesses and web browsers
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # --- SCHEMA DEFINITIONS (Problem Statement Section 07) ---
 class HourData(BaseModel):
-    hour: int
-    demand_kwh: float
-    solar_kwh: float
-    tariff_bdt_per_kwh: float
+    hour: int = Field(..., ge=0, le=23, description="Hour of the day (0-23)")
+    demand_kwh: float = Field(..., ge=0, description="Campus demand in kWh")
+    solar_kwh: float = Field(..., ge=0, description="Forecasted solar generation in kWh")
+    tariff_bdt_per_kwh: float = Field(..., ge=0, description="Grid tariff in BDT/kWh")
 
 class BatteryData(BaseModel):
-    capacity_kwh: float
-    initial_energy_kwh: float
-    minimum_energy_kwh: float
-    max_charge_kwh_per_hour: float
-    max_discharge_kwh_per_hour: float
+    capacity_kwh: float = Field(..., gt=0, description="Total battery capacity in kWh")
+    initial_energy_kwh: float = Field(..., ge=0, description="Battery energy at start of hour 0")
+    minimum_energy_kwh: float = Field(..., ge=0, description="Base minimum reserve in kWh")
+    max_charge_kwh_per_hour: float = Field(..., gt=0, description="Maximum charge rate in kWh/h")
+    max_discharge_kwh_per_hour: float = Field(..., gt=0, description="Maximum discharge rate in kWh/h")
 
 class RequestPayload(BaseModel):
-    scenario_id: str
-    operator_notes: List[str]
-    hours: List[HourData]
-    battery: BatteryData
+    scenario_id: str = Field(..., description="Unique scenario identifier")
+    operator_notes: List[str] = Field(..., min_length=1, max_length=3, description="1 to 3 operator notes")
+    hours: List[HourData] = Field(..., description="Hourly energy parameters for 24 hours")
+    battery: BatteryData = Field(..., description="Battery configuration parameters")
 
 # --- GEMINI CLIENT CONFIGURATION ---
-api_key = os.environ.get("GEMINI_API_KEY", "")
+api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("API_KEY") or os.environ.get("GOOGLE_API_KEY", "")
 model_name = os.environ.get("GEMINI_MODEL", "gemini-1.5-flash")
 
 llm_model = None
@@ -60,9 +70,9 @@ if api_key:
     except Exception as e:
         logger.warning(f"Could not initialize GenerativeModel: {e}")
 else:
-    logger.warning("GEMINI_API_KEY is not set. Will use deterministic fallback engine for interpretation.")
+    logger.info("No external GEMINI_API_KEY detected. Active fallback: Deterministic Guardrail Engine.")
 
-# --- SYSTEM PROMPT (Few-shot, strictly adheres to Section 04 & 08) ---
+# --- SYSTEM PROMPT (Section 04 & Section 08) ---
 SYSTEM_PROMPT = """
 You are an expert energy grid operator AI. Your task is to convert natural language operator notes into a strict JSON list of directives for a 24-hour campus energy scheduling optimizer (hours 0 to 23).
 
@@ -129,10 +139,9 @@ def health_check():
 
 @app.get("/", response_class=HTMLResponse)
 def serve_dashboard():
-    """Serves the awesome interactive UI Dashboard at the root URL."""
+    """Serves the interactive UI Dashboard at root URL."""
     candidates = [
         Path(__file__).parent / "static" / "index.html",
-        Path("e:/Bup Hack/BUP-main/static/index.html"),
         Path("static/index.html")
     ]
     for p in candidates:
@@ -149,8 +158,11 @@ def optimize_energy(payload: RequestPayload):
     # 1. Structural Validation
     if len(payload.hours) != 24:
         raise HTTPException(status_code=400, detail="The hours array must contain exactly 24 hourly entries (0..23).")
-    if not (1 <= len(payload.operator_notes) <= 3):
-        raise HTTPException(status_code=400, detail="operator_notes must contain between 1 and 3 items.")
+    
+    # Check that hours array covers hours 0 to 23
+    hour_indices = [h.hour for h in payload.hours]
+    if sorted(hour_indices) != list(range(24)):
+        raise HTTPException(status_code=400, detail="The hours array must contain unique hours from 0 through 23.")
 
     raw_llm_output = None
 
