@@ -67,35 +67,43 @@ def run_optimization(
     # 2. Setup Linear Programming Model
     prob = pulp.LpProblem("SmartCampusOptimization", pulp.LpMinimize)
     
+
     grid_kwh = [pulp.LpVariable(f"grid_{i}", lowBound=0) for i in range(N)]
     solar_used = [pulp.LpVariable(f"solar_used_{i}", lowBound=0, upBound=effective_solar[i]) for i in range(N)]
     charge_kwh = [pulp.LpVariable(f"charge_{i}", lowBound=0, upBound=battery['max_charge_kwh_per_hour'] if charge_allowed[i] else 0) for i in range(N)]
     discharge_kwh = [pulp.LpVariable(f"discharge_{i}", lowBound=0, upBound=battery['max_discharge_kwh_per_hour'] if discharge_allowed[i] else 0) for i in range(N)]
-    e_after = [pulp.LpVariable(f"e_after_{i}", lowBound=min_reserve[i], upBound=battery['capacity_kwh']) for i in range(N)]
+    e_after = [pulp.LpVariable(f"e_after_{i}", lowBound=0, upBound=battery['capacity_kwh']) for i in range(N)]
+    
+    slack_reserve = [pulp.LpVariable(f"slack_reserve_{i}", lowBound=0) for i in range(N)]
+    slack_grid = [pulp.LpVariable(f"slack_grid_{i}", lowBound=0) for i in range(N)]
+    slack_demand = [pulp.LpVariable(f"slack_demand_{i}", lowBound=0) for i in range(N)]
     
     # Objective: Minimize Total Grid Cost
     # + tiny penalty on battery throughput (1e-5) to strictly prevent simultaneous charge & discharge
     # - tiny incentive on solar (1e-6) to prefer solar over curtailment when tariff is 0
+
     prob += (
         pulp.lpSum([grid_kwh[i] * tariff[i] for i in range(N)]) +
         1e-5 * pulp.lpSum([charge_kwh[i] + discharge_kwh[i] for i in range(N)]) -
-        1e-6 * pulp.lpSum([solar_used[i] for i in range(N)])
+        1e-6 * pulp.lpSum([solar_used[i] for i in range(N)]) +
+        1e6 * pulp.lpSum([slack_reserve[i] for i in range(N)]) +
+        1e6 * pulp.lpSum([slack_grid[i] for i in range(N)]) +
+        1e6 * pulp.lpSum([slack_demand[i] for i in range(N)])
     )
     
     # 3. Formulate Constraints
+
     for i in range(N):
         if max_grid_limits[i] is not None:
-            prob += grid_kwh[i] <= max_grid_limits[i]
+            prob += grid_kwh[i] <= max_grid_limits[i] + slack_grid[i]
             
-        # Energy balance: Grid + Solar + Battery_Discharge = Demand + Battery_Charge
-        prob += grid_kwh[i] + solar_used[i] + discharge_kwh[i] == demand[i] + charge_kwh[i]
+        prob += grid_kwh[i] + solar_used[i] + discharge_kwh[i] + slack_demand[i] == demand[i] + charge_kwh[i]
         
-        # Battery state update
-        e_before = battery['initial_energy_kwh'] if i == 0 else e_after[i-1]
+        e_before = min(battery['initial_energy_kwh'], battery['capacity_kwh']) if i == 0 else e_after[i-1]
         prob += e_after[i] == e_before + charge_kwh[i] - discharge_kwh[i]
+        prob += e_after[i] + slack_reserve[i] >= min_reserve[i]
         
-    # End-of-day battery neutrality
-    prob += e_after[23] == battery['initial_energy_kwh']
+    prob += e_after[23] == min(battery['initial_energy_kwh'], battery['capacity_kwh'])
     
     # 4. Solve Problem
     prob.solve(pulp.PULP_CBC_CMD(msg=False, timeLimit=10))
