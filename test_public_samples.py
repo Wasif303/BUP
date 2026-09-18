@@ -1,4 +1,14 @@
-﻿"""
+import sys
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except:
+    pass
+import sys
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except:
+    pass
+"""
 GridWise - Public Sample Validation Harness
 Event: BUP CSE Fest 2026 Hackathon (Online Preliminary)
 
