@@ -39,7 +39,7 @@ import os
 # Initialize Gemini API securely from Environment Variables
 api_key = os.environ.get("GEMINI_API_KEY", "")
 genai.configure(api_key=api_key)
-model = genai.GenerativeModel('gemini-3.1-pro-preview')
+model = genai.GenerativeModel('gemini-3.8-flash')
 
 @app.post("/optimize-energy")
 def optimize_energy(payload: RequestPayload):
