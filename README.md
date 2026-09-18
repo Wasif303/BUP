@@ -86,5 +86,11 @@ curl -X POST http://localhost:8000/optimize-energy \
 
 ## Docker Fallback Image
 Our Docker image is built and available at:
-`docker pull [INSERT_DOCKER_HUB_LINK_HERE]`
-*(Replace this text with the actual Docker Hub link before final submission)*
+```bash
+docker pull wasif303/gridwise:latest
+```
+
+To run it locally using the exact judge execution command:
+```bash
+docker run -d -p 8000:8000 -e GEMINI_API_KEY="your-gemini-api-key" wasif303/gridwise:latest
+```
