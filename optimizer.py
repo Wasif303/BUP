@@ -1,4 +1,4 @@
-"""
+﻿"""
 GridWise - Linear Programming Optimization Engine
 Formulates and solves 24-hour cost-optimal energy dispatch using PuLP and COIN-OR CBC.
 """
@@ -22,8 +22,8 @@ def solve_energy_dispatch(
     """
     T = 24
     capacity = float(battery_data["capacity_kwh"])
-    initial_energy = min(capacity, float(battery_data["initial_energy_kwh"]))
-    base_min_energy = min(capacity, float(battery_data["minimum_energy_kwh"]))
+    initial_energy = float(battery_data["initial_energy_kwh"])
+    base_min_energy = float(battery_data["minimum_energy_kwh"])
     base_max_charge = float(battery_data["max_charge_kwh_per_hour"])
     base_max_discharge = float(battery_data["max_discharge_kwh_per_hour"])
 
@@ -80,11 +80,7 @@ def solve_energy_dispatch(
 
     # Decision variables
     grid_vars = [
-        pulp.LpVariable(f"grid_{t}", lowBound=0.0) 
-        for t in range(T)
-    ]
-    slack_grid_vars = [
-        pulp.LpVariable(f"slack_grid_{t}", lowBound=0.0)
+        pulp.LpVariable(f"grid_{t}", lowBound=0.0, upBound=max_grid[t]) 
         for t in range(T)
     ]
     solar_used_vars = [
@@ -100,40 +96,25 @@ def solve_energy_dispatch(
         for t in range(T)
     ]
     soc_vars = [
-        pulp.LpVariable(f"soc_{t}", lowBound=0.0, upBound=capacity) 
-        for t in range(T)
-    ]
-    
-    # Slack variables for impossible battery constraints
-    slack_soc_vars = [
-        pulp.LpVariable(f"slack_soc_{t}", lowBound=0.0)
+        pulp.LpVariable(f"soc_{t}", lowBound=min_reserve[t], upBound=capacity) 
         for t in range(T)
     ]
 
     # Objective: Minimize total electricity cost (with tiny tie-breaker penalty against battery cycling)
-    # And massive penalties for using slack variables (ensuring they are only used if physically impossible)
     prob += (
         pulp.lpSum([grid_vars[t] * tariff[t] for t in range(T)]) +
-        pulp.lpSum([1e-6 * (charge_vars[t] + discharge_vars[t]) for t in range(T)]) +
-        pulp.lpSum([slack_grid_vars[t] * 1e6 for t in range(T)]) +
-        pulp.lpSum([slack_soc_vars[t] * 1e6 for t in range(T)])
+        pulp.lpSum([1e-6 * (charge_vars[t] + discharge_vars[t]) for t in range(T)])
     )
 
     # Constraints
     for t in range(T):
-        # 0. Enforce max grid limits using slack (soft constraint)
-        prob += (
-            grid_vars[t] <= max_grid[t] + slack_grid_vars[t],
-            f"Max_Grid_{t}"
-        )
-
         # 1. Hourly Energy Balance: grid + solar_used + discharge = demand + charge
         prob += (
             grid_vars[t] + solar_used_vars[t] + discharge_vars[t] == demand[t] + charge_vars[t],
             f"Energy_Balance_{t}"
         )
 
-        # 2. Battery State Transition (with soft constraint for minimum reserve)
+        # 2. Battery State Transition
         if t == 0:
             prob += (
                 soc_vars[0] == initial_energy + charge_vars[0] - discharge_vars[0],
@@ -144,14 +125,8 @@ def solve_energy_dispatch(
                 soc_vars[t] == soc_vars[t - 1] + charge_vars[t] - discharge_vars[t],
                 f"Battery_State_{t}"
             )
-            
-        # 3. Soft constraint allowing SOC to dip below min_reserve ONLY if mathematically forced
-        prob += (
-            soc_vars[t] + slack_soc_vars[t] >= min_reserve[t],
-            f"Min_Reserve_Soft_{t}"
-        )
 
-    # 4. End-of-Day Battery Neutrality: E_23 == initial_energy
+    # 3. End-of-Day Battery Neutrality: E_23 == initial_energy
     prob += (soc_vars[T - 1] == initial_energy, "Battery_Neutrality")
 
     # Solve using CBC solver silently
